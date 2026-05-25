@@ -1,5 +1,5 @@
-function [psi_cpssm, ps_realization, general_params, irr_params_set, seed] = get_tppsm_data(scenario, varargin)
-% get_tppsm_data
+function [psi_cpssm, ps_realization, general_params, irr_params_set, seed] = get_tppsm_multifreq_data(scenario, varargin)
+% get_tppsm_multifreq_data
 %
 % Generates multi-frequency (L1, L2 and L5) realizations of ionospheric 
 % scintillation complex field time series using preset irregularity 
@@ -8,7 +8,7 @@ function [psi_cpssm, ps_realization, general_params, irr_params_set, seed] = get
 %
 % Syntax:
 %   [psi_cpssm, ps_realization, general_params, irr_params_set, seed] = ...
-%       get_tppsm_data(scenario, 'simulation_time', simulation_time, ...
+%       get_tppsm_multifreq_data(scenario, 'simulation_time', simulation_time, ...
 %                      'sampling_interval', sampling_interval, ...
 %                      'general_params', general_params, ...
 %                      'irr_params_set', irr_params_set, ...
@@ -42,7 +42,7 @@ function [psi_cpssm, ps_realization, general_params, irr_params_set, seed] = get
 %   seed             - Seed value used.
 %
 % Example:
-%   [psi_tpwpsm, ps_realization] = get_tppsm_data('moderate', 'seed', 42, 'rhof_veff_ratio', 0.35);
+%   [psi_tpwpsm, ps_realization] = get_tppsm_multifreq_data('moderate', 'seed', 42, 'rhof_veff_ratio', 0.35);
 %
 % Notes:
 %   - This implementation is for single-frequency carrier phase tracking.
