@@ -15,15 +15,22 @@ cpssm_params = struct( ...
     'Strong',  {'strong', 'is_enable_cmd_print', false, 'simulation_time', sim_time, 'sampling_interval', t_samp, 'rhof_veff_ratio', 0.27}...
     );
 
+
+% psi_cpssm: the complex scintillation field
+% ps_realization: the detrended phase time series realization (in radians)
+% NOTE: the amplitude and phase are not returned directly, but you can derive them from psi_cpssm as abs(psi_cpssm) and angle(psi_cpssm)
 [psi_weak_ts, phi_R_weak_ts] = get_tppsm_multifreq_data(cpssm_params.Weak, 'seed', seed);
 [psi_strong_ts, phi_R_strong_ts] = get_tppsm_multifreq_data(cpssm_params.Strong, 'seed', seed);
 
+% get unwrapped phase from a complex field using FFT-based interpolation.
 phi_I_weak_ts = get_corrected_phase(psi_weak_ts(:,1));
 phi_I_strong_ts = get_corrected_phase(psi_strong_ts(:,1));
 
+% get the diffractive phase (unwrapped)
 phi_D_weak_ts = phi_I_weak_ts - phi_R_weak_ts(:,1);
 phi_D_strong_ts = phi_I_strong_ts - phi_R_strong_ts(:,1);
 
+% get the diffractive phase (wrapped)
 wrapped_phi_D_weak_ts = wrapToPi(phi_D_weak_ts);
 wrapped_phi_D_strong_ts = wrapToPi(phi_D_strong_ts);
 
