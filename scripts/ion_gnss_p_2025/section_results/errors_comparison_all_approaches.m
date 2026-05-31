@@ -82,7 +82,7 @@ legend_pos = {[1,1],[1,1],[1,1]};
 
 for fig_i = 1:numel(model_list)
     mdl = model_list{fig_i};
-    fig = figure('Units','normalized','Position',[0.05 0.05 0.9 1],'Color','w');
+    fig = figure('Units','normalized','Position',[0.05 0.05 0.9 1]); % ,'Color','w'
     tiledlayout(3,2,'TileSpacing','compact','Padding','compact');
 
     for row = 1:3

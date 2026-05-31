@@ -42,9 +42,13 @@ bic_array = zeros(ar_orders_amount,2);
 % First for loop -> Weak and Strong 
 for severity = 1:2
     for ar_order = 1:ar_orders_amount
+        % creates a model specification object (doesn't fit yet) for an ARIMA model with the given order (p, d, q)
+        % p → AR order; d → differencing order (0 for no differencing); q → MA order (0 for no MA component)
         ar_model = arima(ar_order,0,0);
         ar_model.Constant = 0;
+        % fits the AR model to the data in `phases_ts(:, severity)` and estimates the parameters (AR coefficients and variance of the residuals). The estimated model is returned as `ar_model`.
         ar_model = estimate(ar_model, phases_ts(:, severity));
+        % After estimate, ar_model should become a fully specified estimated model
         results = summarize(ar_model);
         bic_array(ar_order,severity) = results.BIC;
     end

@@ -10,7 +10,8 @@ function [state_estimates, ...
     training_scint_model, ...
     adaptive_config, ...
     online_mdl_learning_cfg, ...
-    psi_tppsm)
+    psi_tppsm, ...
+    geometry_measurement)
 % get_kalman_pll_estimates
 %
 % Generates Kalman filter state and error covariance estimates based on the
@@ -138,9 +139,12 @@ function [state_estimates, ...
     if nargin < 8
         psi_tppsm = [];
     end
+    if nargin < 9
+        geometry_measurement = [];
+    end
     
     [F, Q, H, R, W, Hj_handle, state_estimates, error_covariance_estimates, L1_c_over_n0_linear_estimates, extra_vars, N, ut_params] = ...
-    initializer_function(received_signal, kalman_pll_config, initial_estimates, kf_type, training_scint_model, adaptive_config, online_mdl_learning_cfg);
+    initializer_function(received_signal, kalman_pll_config, initial_estimates, kf_type, training_scint_model, adaptive_config, online_mdl_learning_cfg, geometry_measurement);
 
     %% Main filtering loop.
     for step = 1:N
@@ -203,7 +207,7 @@ function [state_estimates, ...
 end
 
 function [F, Q, H, R, W, Hj_handle, state_estimates, error_covariance_estimates, L1_c_over_n0_linear_estimates, extra_vars, N, ut_params] = initializer_function(...
-    received_signal, kalman_pll_config, initial_estimates, kf_type, training_scint_model, adaptive_config, online_mdl_learning_cfg)
+    received_signal, kalman_pll_config, initial_estimates, kf_type, training_scint_model, adaptive_config, online_mdl_learning_cfg, geometry_measurement)
 % initializer_function
 %
 % Initializes the Kalman PLL estimation by validating inputs, retrieving the
@@ -279,6 +283,9 @@ function [F, Q, H, R, W, Hj_handle, state_estimates, error_covariance_estimates,
     validate_training_scint_model(training_scint_model, kalman_pll_config);
     validate_adaptive_config(adaptive_config);
     validate_online_learning_cfg(online_mdl_learning_cfg, kalman_pll_config, training_scint_model, kf_type)
+    if nargin < 8
+        geometry_measurement = [];
+    end
     
     % Retrieve filter matrices from configuration.
     config_struct = kalman_pll_config.(training_scint_model).(kf_type);
@@ -306,6 +313,19 @@ function [F, Q, H, R, W, Hj_handle, state_estimates, error_covariance_estimates,
     % Set initial estimates for the filtering loop.
     extra_vars.x_hat_project_ahead = initial_estimates.x_hat_init;
     extra_vars.P_hat_project_ahead = initial_estimates.P_hat_init;
+    extra_vars.is_geometry_aided = ~isempty(geometry_measurement);
+    extra_vars.geometry_measurement = geometry_measurement(:);
+    if extra_vars.is_geometry_aided
+        if numel(extra_vars.geometry_measurement) ~= N
+            error('get_kalman_pll_estimates:invalid_geometry_measurement_length', ...
+                'Geometry measurement must have the same number of samples as received_signal.');
+        end
+        extra_vars.geometry_noise_variance = [];
+        if isfield(kalman_pll_config.(training_scint_model).(kf_type), 'geometry_aided_measurement_config') && ...
+                isfield(kalman_pll_config.(training_scint_model).(kf_type).geometry_aided_measurement_config, 'noise_variance')
+            extra_vars.geometry_noise_variance = kalman_pll_config.(training_scint_model).(kf_type).geometry_aided_measurement_config.noise_variance;
+        end
+    end
 
     augmentation_model_id = lower(char(config_struct.augmentation_model_initializer.id));
     extra_vars.augmentation_model_id = augmentation_model_id;
@@ -520,12 +540,28 @@ function [K, innovation, x_hat_update, P_hat_update] = standard_kf_update(...
 % ORCID: https://orcid.org/0000-0003-0412-5583
 % Email: rdlfresearch@gmail.com
 
-    % Compute the estimated signal using the linear measurement model.
-    estimated_signal = exp(1j * H * extra_vars.x_hat_project_ahead);
-    
-    % Compute innovation as the difference in angle between the received signal
-    % (from the previous time step) and the estimated signal.
-    innovation = angle(received_signal(step-1, 1) * conj(estimated_signal));
+    if extra_vars.is_geometry_aided && size(H, 1) == 2
+        if isscalar(adapt_R)
+            if isempty(extra_vars.geometry_noise_variance)
+                error('get_kalman_pll_estimates:missing_geometry_noise_variance', ...
+                    'Geometry-aided KF requires geometry_noise_variance in the config.');
+            end
+            adapt_R = diag([adapt_R, extra_vars.geometry_noise_variance]);
+        end
+        H_total = H(1, :);
+        H_geometry = H(2, :);
+        estimated_signal = exp(1j * H_total * extra_vars.x_hat_project_ahead);
+        innovation_total = angle(received_signal(step-1, 1) * conj(estimated_signal));
+        innovation_geometry = extra_vars.geometry_measurement(step-1, 1) - (H_geometry * extra_vars.x_hat_project_ahead);
+        innovation = [innovation_total; innovation_geometry];
+    else
+        % Compute the estimated signal using the linear measurement model.
+        estimated_signal = exp(1j * H * extra_vars.x_hat_project_ahead);
+        
+        % Compute innovation as the difference in angle between the received signal
+        % (from the previous time step) and the estimated signal.
+        innovation = angle(received_signal(step-1, 1) * conj(estimated_signal));
+    end
     
     % Compute the Kalman gain.
     K = extra_vars.P_hat_project_ahead * H.' * ((H * extra_vars.P_hat_project_ahead * H.' + adapt_R) \ eye(size(R, 1)));

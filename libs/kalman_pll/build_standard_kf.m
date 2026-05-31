@@ -18,7 +18,16 @@ function [F, Q, H, R, W] = build_standard_kf(F_los, Q_los, aug_data, general_con
 % Email: rdlfresearch@gmail.com
 
     % Default measurement noise covariance:
-    R = diag(get_phase_variances(general_config.C_over_N0_array_dBHz, sampling_interval));
+    phase_noise_variance = get_phase_variances(general_config.C_over_N0_array_dBHz, sampling_interval);
+    is_geometry_aided = isfield(general_config, 'geometry_aided_measurement_config') && ...
+        isfield(general_config.geometry_aided_measurement_config, 'is_used') && ...
+        general_config.geometry_aided_measurement_config.is_used;
+    if is_geometry_aided
+        geometry_noise_variance = general_config.geometry_aided_measurement_config.noise_variance;
+        R = diag([phase_noise_variance, geometry_noise_variance]);
+    else
+        R = diag(phase_noise_variance);
+    end
 
     switch lower(string(aug_data.augmentation_type))
         case 'none'
@@ -70,12 +79,16 @@ function [F, Q, H, R, W] = build_standard_kf(F_los, Q_los, aug_data, general_con
             % Combine LOS and VAR covariance matrices
             Q = blkdiag(Q_los, Q_aug);
             
-            % Compute measurement noise covariance matrix R from C/N0 values and sampling_interval.
-            R = diag(get_phase_variances(general_config.C_over_N0_array_dBHz, sampling_interval));
-        
             % Construct measurement matrix H.
-            % H is defined as [1, zeros(1, size(F_los,1)-1), 1, zeros(1, var_states_amount*var_model_order-1)]
-            H = [1, zeros(1, size(F_los,1)-1), 1, zeros(1, states_amount*model_order - 1)];
+            % Legacy mode: one scalar phase measurement that observes LOS + AR phase.
+            % Geometry-aided mode: a second row observes LOS phase only.
+            H_total = [1, zeros(1, size(F_los,1)-1), 1, zeros(1, states_amount*model_order - 1)];
+            H_los = [1, zeros(1, size(F_los,1)-1), zeros(1, states_amount*model_order)];
+            if is_geometry_aided
+                H = [H_total; H_los];
+            else
+                H = H_total;
+            end
             
             % Construct the augmented intercept vector W.
             W = [zeros(size(F_los,1), 1); intercept_vector; zeros(states_amount*(model_order-1),1)];
