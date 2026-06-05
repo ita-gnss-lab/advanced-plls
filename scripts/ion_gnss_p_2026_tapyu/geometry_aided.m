@@ -21,11 +21,11 @@ cache_dir = fullfile(fileparts(mfilename('fullpath')), 'cache');
 [kf_ar_cfg, akf_ar_cfg, ahl_kf_ar_cfg, kf_cfg, akf_cfg, online_mdl_learning_cfg] = get_adaptive_cfgs();
 
 % Wiener state noise variance (\sigma^2_{W,3})
-sigma2_W_3_sweep_amount = 5; % HACK: 20; for test
+sigma2_W_3_sweep_amount = 10;
 sigma2_W_3_sweep_no_geo = logspace(-14,2,sigma2_W_3_sweep_amount);
-sigma2_W_3_sweep_geo = logspace(-14,-10,sigma2_W_3_sweep_amount);
+sigma2_W_3_sweep_geo = 1e-14 * ones(1, sigma2_W_3_sweep_amount); %logspace(-14,-10,sigma2_W_3_sweep_amount); % FIXME: using the same values for the geometry-aided until I have a better understanding of what σ^2_{W,3} models for the geometry-aided case.
 % Amount of Monte Carlo runs
-mc_runs = 1; % HACK: 100; for test
+mc_runs = 10;
 % Ionospheric Scintillation Severities
 severities = ["weak", "strong"];
 
@@ -34,7 +34,7 @@ severities = ["weak", "strong"];
 sampling_interval = 1e-2; % 100 ms
 settling_time = 50;
 simulation_time = 300;
-geometry_noise_variance = 1e-12; % HACK: 1e-14; for test.
+geometry_noise_variance = 1e-12; % FIXME: you should adjust this value according to the expected accuracy of the satellite ephemerides
 
 % Valid time vector (after the settling period)
 valid_samples_vector = ((settling_time/sampling_interval + 1) : simulation_time/sampling_interval).';
