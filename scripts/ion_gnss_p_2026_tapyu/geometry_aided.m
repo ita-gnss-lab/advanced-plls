@@ -22,7 +22,8 @@ cache_dir = fullfile(fileparts(mfilename('fullpath')), 'cache');
 
 % Wiener state noise variance (\sigma^2_{W,3})
 sigma2_W_3_sweep_amount = 5; % HACK: 20; for test
-sigma2_W_3_sweep = logspace(-14,2,sigma2_W_3_sweep_amount);
+sigma2_W_3_sweep_no_geo = logspace(-14,2,sigma2_W_3_sweep_amount);
+sigma2_W_3_sweep_geo = logspace(-14,-10,sigma2_W_3_sweep_amount);
 % Amount of Monte Carlo runs
 mc_runs = 1; % HACK: 100; for test
 % Ionospheric Scintillation Severities
@@ -39,8 +40,8 @@ geometry_noise_variance = 1e-12; % HACK: 1e-14; for test.
 valid_samples_vector = ((settling_time/sampling_interval + 1) : simulation_time/sampling_interval).';
 
 % Pre-allocate the results structure
-results_matrix_template = zeros(length(sigma2_W_3_sweep),mc_runs); % [sigma2_W_3_idx, seed]
-struct_states = struct('phi_T', results_matrix_template, 'phi_W', results_matrix_template); % ???: understand why we have phi_T and phi_W. I got this from `single_freq_assessment.m`
+results_matrix_template = zeros(length(sigma2_W_3_sweep_no_geo),mc_runs); % [sigma2_W_3_idx, seed]
+struct_states = struct('phi_T', results_matrix_template, 'phi_W', results_matrix_template);
 struct_aug_states = struct('phi_T', results_matrix_template, 'phi_W', results_matrix_template, 'phi_AR', results_matrix_template);
 approaches_struct = struct('kf_ar_geo', struct_aug_states, ...
                            'kf_ar_no_geo', struct_aug_states, ...
@@ -54,41 +55,43 @@ results = struct('cpssm_wo_refr', severities_struct, 'cpssm_w_refr', severities_
 %% CPSSM loop (diffractive phase only)
 
 fprintf('\nStarting CPSSM (diffractive phase only, without refractive effect) simulations...\n');
-total_cppsm_wo_refr = numel(severities) * length(sigma2_W_3_sweep) * mc_runs;
+total_cppsm_wo_refr = numel(severities) * length(sigma2_W_3_sweep_no_geo) * mc_runs;
 iter = 0;
 start_time = tic;
 for severity = severities
-    for sigma2_W_3_idx = 1:length(sigma2_W_3_sweep)
+    for sigma2_W_3_idx = 1:length(sigma2_W_3_sweep_no_geo)
         for seed = 1:mc_runs
             [rx_signal_model_inputs, gen_kf_cfg_geo, gen_kf_cfg_no_geo, init_estimates_cpssm_geo, init_estimates_cpssm_no_geo, init_estimates_none, ar_phase_idx] =...
-                get_overall_cfgs(cache_dir, 'cpssm', severity, true, sigma2_W_3_sweep(sigma2_W_3_idx), sampling_interval, settling_time, simulation_time, seed, geometry_noise_variance);
+                get_overall_cfgs(cache_dir, 'cpssm', severity, true, sigma2_W_3_sweep_no_geo(sigma2_W_3_idx), sigma2_W_3_sweep_geo(sigma2_W_3_idx), sampling_interval, settling_time, simulation_time, seed, geometry_noise_variance);
 
+            % get received signal
+            % NOTE: `diffractive_phase` is wrapped
             [rx_sig_cpssm_wo_refr, true_los_phase, ~, diffractive_phase] = get_received_signal(rx_signal_model_inputs{:});
             geometry_los_phase = get_noisy_geometry_phase(true_los_phase, geometry_noise_variance);
-            % For CPSSM, the training_scint_model is 'TPPSM' (AR augmented).
-            % 1. KF-AR     : No adaptive update.
-            % geometry-aided KF-AR estimates
+            
+            % geometry-aided KF-AR
             [kf_ar_cpssm_geo, ~] = get_kalman_pll_estimates(rx_sig_cpssm_wo_refr, gen_kf_cfg_geo, init_estimates_cpssm_geo, 'standard', 'TPPSM', kf_ar_cfg, online_mdl_learning_cfg, [], geometry_los_phase);
-            % KF-AR
+            % non-geometry-aided KF-AR
             [kf_ar_cpssm_no_geo, ~] = get_kalman_pll_estimates(rx_sig_cpssm_wo_refr, gen_kf_cfg_no_geo, init_estimates_cpssm_no_geo, 'standard', 'TPPSM', kf_ar_cfg, online_mdl_learning_cfg);
             % TODO: % 2. AKF-AR    : NWPR adaptive update with hard_limited = false.
             % TODO: [akf_ar_cpssm, ~]  = get_kalman_pll_estimates(rx_sig_cpssm_wo_refr, gen_kf_cfg, init_estimates_cpssm, 'standard', 'TPPSM', akf_ar_cfg, online_mdl_learning_cfg);
             % TODO: % 3. AHL-KF-AR : NWPR adaptive update with hard_limited = true.
             % TODO: [ahl_kf_ar_cpssm, ~]   = get_kalman_pll_estimates(rx_sig_cpssm_wo_refr, gen_kf_cfg, init_estimates_cpssm, 'standard', 'TPPSM', ahl_kf_ar_cfg, online_mdl_learning_cfg);
 
-            % Define validation vectors (assuming valid_samples_vector is defined)
+            % Define valid vectors, i.e., after the settling time
             valid_los_phase = true_los_phase(valid_samples_vector,1); % This is being iterated unecessarily.
             valid_cpssm_phase = diffractive_phase(valid_samples_vector,1);
             valid_total_phase = valid_los_phase + valid_cpssm_phase;
 
-            %%% Extracting estimates
-            % KF-AR
-            kf_ar_geo_valid_hat_phi_W = kf_ar_cpssm_geo(valid_samples_vector,1);
-            kf_ar_geo_valid_hat_phi_AR = kf_ar_cpssm_geo(valid_samples_vector,ar_phase_idx);
-            kf_ar_geo_valid_hat_phi_T = kf_ar_geo_valid_hat_phi_W + kf_ar_geo_valid_hat_phi_AR;
+            %%% Extracting valid estimates, i.e., after the settling time
+            % KF-AR non-geometry-aided
             kf_ar_no_geo_valid_hat_phi_W = kf_ar_cpssm_no_geo(valid_samples_vector,1);
             kf_ar_no_geo_valid_hat_phi_AR = kf_ar_cpssm_no_geo(valid_samples_vector,ar_phase_idx);
             kf_ar_no_geo_valid_hat_phi_T = kf_ar_no_geo_valid_hat_phi_W + kf_ar_no_geo_valid_hat_phi_AR;
+            % KF-AR geometry-aided
+            kf_ar_geo_valid_hat_phi_W = kf_ar_cpssm_geo(valid_samples_vector,1);
+            kf_ar_geo_valid_hat_phi_AR = kf_ar_cpssm_geo(valid_samples_vector,ar_phase_idx);
+            kf_ar_geo_valid_hat_phi_T = kf_ar_geo_valid_hat_phi_W + kf_ar_geo_valid_hat_phi_AR;
             % % AKF-AR
             % akf_ar_valid_hat_phi_W = akf_ar_cpssm(valid_samples_vector,1);
             % akf_ar_valid_hat_phi_AR = akf_ar_cpssm(valid_samples_vector,ar_phase_idx);
@@ -103,9 +106,14 @@ for severity = severities
             % akf_valid_hat_phi_T = akf_cpssm(valid_samples_vector,1);
 
             %%% Saving the performance assessment
-            % KF-AR
-            results.cpssm_wo_refr.(severity).kf_ar_geo.phi_T(sigma2_W_3_idx, seed) = rms(wrapToPi(kf_ar_geo_valid_hat_phi_T - valid_total_phase));
+            % KF-AR non-geometry-aided
             results.cpssm_wo_refr.(severity).kf_ar_no_geo.phi_T(sigma2_W_3_idx, seed) = rms(wrapToPi(kf_ar_no_geo_valid_hat_phi_T - valid_total_phase));
+            results.cpssm_wo_refr.(severity).kf_ar_no_geo.phi_W(sigma2_W_3_idx, seed) = rms(wrapToPi(kf_ar_no_geo_valid_hat_phi_W - valid_los_phase));
+            results.cpssm_wo_refr.(severity).kf_ar_no_geo.phi_AR(sigma2_W_3_idx, seed) = rms(wrapToPi(kf_ar_no_geo_valid_hat_phi_AR - valid_cpssm_phase));
+            % KF-AR geometry-aided
+            results.cpssm_wo_refr.(severity).kf_ar_geo.phi_T(sigma2_W_3_idx, seed) = rms(wrapToPi(kf_ar_geo_valid_hat_phi_T - valid_total_phase));
+            results.cpssm_wo_refr.(severity).kf_ar_geo.phi_W(sigma2_W_3_idx, seed) = rms(wrapToPi(kf_ar_no_geo_valid_hat_phi_W - valid_los_phase));
+            results.cpssm_wo_refr.(severity).kf_ar_geo.phi_AR(sigma2_W_3_idx, seed) = rms(wrapToPi(kf_ar_no_geo_valid_hat_phi_AR - valid_cpssm_phase));
             % % AKF-AR
             % results.cpssm_wo_refr.(severity).akf_ar.phi_W(sigma2_W_3_idx, seed) = rms(wrapToPi(akf_ar_valid_hat_phi_W - valid_los_phase));
             % results.cpssm_wo_refr.(severity).akf_ar.phi_AR(sigma2_W_3_idx, seed) = rms(wrapToPi(akf_ar_valid_hat_phi_AR - valid_cpssm_phase));
@@ -126,7 +134,7 @@ for severity = severities
             elapsed = toc(start_time);
             remain  = elapsed * (total_cppsm_wo_refr/iter - 1);
             fprintf('CPSSM (w/o refractive effect) [%d/%d] severity=%s, sigma2_W_3_idx=%d/%d, seed=%d/%d, elapsed=%.1fs, remaining~%.1fs\n', ...
-                    iter, total_cppsm_wo_refr, severity, sigma2_W_3_idx, length(sigma2_W_3_sweep), seed, mc_runs, elapsed, remain);
+                    iter, total_cppsm_wo_refr, severity, sigma2_W_3_idx, length(sigma2_W_3_sweep_no_geo), seed, mc_runs, elapsed, remain);
         end
     end
 end
@@ -134,14 +142,14 @@ end
 %% CPSSM loop (diffractive + refractive phase)
 
 fprintf('\nStarting CPSSM (wit refractive effect) simulations...\n');
-total_cppsm_w_refr = numel(severities) * length(sigma2_W_3_sweep) * mc_runs;
+total_cppsm_w_refr = numel(severities) * length(sigma2_W_3_sweep_no_geo) * mc_runs;
 iter = 0;
 start_time = tic;
 for severity = severities
-    for sigma2_W_3_idx = 1:length(sigma2_W_3_sweep)
+    for sigma2_W_3_idx = 1:length(sigma2_W_3_sweep_no_geo)
         for seed = 1:mc_runs
             [rx_signal_model_inputs, gen_kf_cfg_geo, gen_kf_cfg_no_geo, init_estimates_cpssm_geo, init_estimates_cpssm_no_geo, init_estimates_none, ar_phase_idx] =...
-                get_overall_cfgs(cache_dir, 'cpssm', severity, false, sigma2_W_3_sweep(sigma2_W_3_idx), sampling_interval, settling_time, simulation_time, seed, geometry_noise_variance);
+                get_overall_cfgs(cache_dir, 'cpssm', severity, false, sigma2_W_3_sweep_no_geo(sigma2_W_3_idx), sigma2_W_3_sweep_geo(sigma2_W_3_idx), sampling_interval, settling_time, simulation_time, seed, geometry_noise_variance);
 
             [rx_sig_cpssm_w_refr, true_los_phase, psi_settled, diffractive_phase] = get_received_signal(rx_signal_model_inputs{:});
             geometry_los_phase = get_noisy_geometry_phase(true_los_phase, geometry_noise_variance);
@@ -154,20 +162,21 @@ for severity = severities
             % TODO: % 3. AHL-KF-AR : NWPR adaptive update with hard_limited = true.
             % TODO: [ahl_kf_ar_cpssm, ~]   = get_kalman_pll_estimates(rx_sig_cpssm_w_refr, gen_kf_cfg, init_estimates_cpssm, 'standard', 'TPPSM', ahl_kf_ar_cfg, online_mdl_learning_cfg);
             
-            % Define validation vectors (assuming valid_samples_vector is defined)
+            % Define valid vectors, i.e., after the settling time
             valid_los_phase = true_los_phase(valid_samples_vector,1); % This is being iterated unecessarily.
             valid_cpssm_diffractive_phase = diffractive_phase(valid_samples_vector,1);
             valid_cpssm_total_phase = get_corrected_phase(psi_settled(valid_samples_vector,1));
             valid_total_phase = valid_los_phase + valid_cpssm_total_phase;
 
-            %%% Extracting estimates
-            % KF-AR
-            kf_ar_geo_valid_hat_phi_W = kf_ar_cpssm_geo(valid_samples_vector,1);
-            kf_ar_geo_valid_hat_phi_AR = kf_ar_cpssm_geo(valid_samples_vector,ar_phase_idx);
-            kf_ar_geo_valid_hat_phi_T = kf_ar_geo_valid_hat_phi_W + kf_ar_geo_valid_hat_phi_AR;
+            %%% Extracting valid estimates, i.e., after the settling time
+            % KF-AR non-geometry-aided
             kf_ar_no_geo_valid_hat_phi_W = kf_ar_cpssm_no_geo(valid_samples_vector,1);
             kf_ar_no_geo_valid_hat_phi_AR = kf_ar_cpssm_no_geo(valid_samples_vector,ar_phase_idx);
             kf_ar_no_geo_valid_hat_phi_T = kf_ar_no_geo_valid_hat_phi_W + kf_ar_no_geo_valid_hat_phi_AR;
+            % KF-AR geometry-aided
+            kf_ar_geo_valid_hat_phi_W = kf_ar_cpssm_geo(valid_samples_vector,1);
+            kf_ar_geo_valid_hat_phi_AR = kf_ar_cpssm_geo(valid_samples_vector,ar_phase_idx);
+            kf_ar_geo_valid_hat_phi_T = kf_ar_geo_valid_hat_phi_W + kf_ar_geo_valid_hat_phi_AR;
             % TODO: % AKF-AR
             % akf_ar_valid_hat_phi_W = akf_ar_cpssm(valid_samples_vector,1);
             % akf_ar_valid_hat_phi_AR = akf_ar_cpssm(valid_samples_vector,ar_phase_idx);
@@ -182,9 +191,14 @@ for severity = severities
             % akf_valid_hat_phi_T = akf_cpssm(valid_samples_vector,1);
             
             %%% Saving the performance assessment
-            % KF-AR
-            results.cpssm_w_refr.(severity).kf_ar_geo.phi_T(sigma2_W_3_idx, seed) = rms(wrapToPi(kf_ar_geo_valid_hat_phi_T - valid_total_phase));
+            % KF-AR non-geometry-aided
             results.cpssm_w_refr.(severity).kf_ar_no_geo.phi_T(sigma2_W_3_idx, seed) = rms(wrapToPi(kf_ar_no_geo_valid_hat_phi_T - valid_total_phase));
+            results.cpssm_w_refr.(severity).kf_ar_no_geo.phi_W(sigma2_W_3_idx, seed) = rms(wrapToPi(kf_ar_no_geo_valid_hat_phi_W - valid_los_phase));
+            results.cpssm_w_refr.(severity).kf_ar_no_geo.phi_AR(sigma2_W_3_idx, seed) = rms(wrapToPi(kf_ar_no_geo_valid_hat_phi_AR - valid_cpssm_phase));
+            % KF-AR geometry-aided
+            results.cpssm_w_refr.(severity).kf_ar_geo.phi_T(sigma2_W_3_idx, seed) = rms(wrapToPi(kf_ar_geo_valid_hat_phi_T - valid_total_phase));
+            results.cpssm_w_refr.(severity).kf_ar_geo.phi_W(sigma2_W_3_idx, seed) = rms(wrapToPi(kf_ar_geo_valid_hat_phi_W - valid_los_phase));
+            results.cpssm_w_refr.(severity).kf_ar_geo.phi_AR(sigma2_W_3_idx, seed) = rms(wrapToPi(kf_ar_geo_valid_hat_phi_AR - valid_cpssm_phase));
             % TODO: % AKF-AR
             % results.cpssm_w_refr.(severity).akf_ar.phi_W(sigma2_W_3_idx, seed) = rms(wrapToPi(akf_ar_valid_hat_phi_W - valid_los_phase));
             % results.cpssm_w_refr.(severity).akf_ar.phi_AR(sigma2_W_3_idx, seed) = rms(wrapToPi(akf_ar_valid_hat_phi_AR - valid_cpssm_diffractive_phase));
@@ -205,16 +219,17 @@ for severity = severities
             elapsed = toc(start_time);
             remain  = elapsed * (total_cppsm_w_refr/iter - 1);
             fprintf('CPSSM (w/ refractive effect) [%d/%d] severity=%s, sigma2_W_3_idx=%d/%d, seed=%d/%d, elapsed=%.1fs, remaining~%.1fs\n', ...
-                    iter, total_cppsm_w_refr, severity, sigma2_W_3_idx, length(sigma2_W_3_sweep), seed, mc_runs, elapsed, remain);
+                    iter, total_cppsm_w_refr, severity, sigma2_W_3_idx, length(sigma2_W_3_sweep_no_geo), seed, mc_runs, elapsed, remain);
         end
     end
 end
 
-save(fullfile('results/geometry_aided.mat'), "results", "sigma2_W_3_sweep");
+%% Script finalization
+save(fullfile('results/results_L1_assessment.mat'), "results", "sigma2_W_3_sweep_no_geo", "sigma2_W_3_sweep_geo");
 
 %% Auxiliary functions
 function [rx_signal_model_inputs, gen_kf_cfg_geo, gen_kf_cfg_no_geo, init_estimates_cpssm_geo, init_estimates_cpssm_no_geo, init_estimates_none, ar_phase_idx] = ...
-    get_overall_cfgs(cache_dir, scint_model, severity, is_refractive_effects_removed_received_signal, sigma2_W_3, sampling_interval, settling_time, simulation_time, seed, geometry_noise_variance)
+    get_overall_cfgs(cache_dir, scint_model, severity, is_refractive_effects_removed_received_signal, sigma2_W_3_no_geo, sigma2_W_3_geo, sampling_interval, settling_time, simulation_time, seed, geometry_noise_variance)
     % Define overall settings for the KF framework setup
 
     % General parameters
@@ -273,7 +288,7 @@ function [rx_signal_model_inputs, gen_kf_cfg_geo, gen_kf_cfg_no_geo, init_estima
     % Geometry-aided configuration
     gen_cfg_cpssm_geo = struct( ...
       'kf_type', 'standard', ...
-      'discrete_wiener_model_config', { {1, 3, sampling_interval, [0, 0, sigma2_W_3], 1} }, ...
+      'discrete_wiener_model_config', { {1, 3, sampling_interval, [0, 0, sigma2_W_3_geo], 1} }, ...
       'scintillation_training_data_config', train_cfg_cpssm, ...
       'C_over_N0_array_dBHz', L1_C_over_N0_dBHz, ...
       'initial_states_distributions_boundaries', { {[-pi, pi], [-25, 25], [-1, 1]} }, ...
@@ -281,14 +296,13 @@ function [rx_signal_model_inputs, gen_kf_cfg_geo, gen_kf_cfg_no_geo, init_estima
       'augmentation_model_initializer', struct('id', 'aryule', 'model_params', struct('model_order', ar_model_order)), ...
       'is_use_cached_settings', false, ...
       'is_generate_random_initial_estimates', true, ...
-      'is_enable_cmd_print', false ...
+      'is_enable_cmd_print', false, ...
+      'geometry_aided_measurement_config', struct('is_used', true, 'noise_variance', geometry_noise_variance) ...
     );
-    gen_cfg_cpssm_geo.scintillation_training_data_config = train_cfg_cpssm;
-    gen_cfg_cpssm_geo.geometry_aided_measurement_config = struct('is_used', true, 'noise_variance', geometry_noise_variance);
 
-    % Non-geometry-aided configuration
+    % Non-geometry-aided configuration (peform some updates to the geometry-aided configuration)
     gen_cfg_cpssm_no_geo = gen_cfg_cpssm_geo;
-    gen_cfg_cpssm_no_geo.scintillation_training_data_config = train_cfg_cpssm;
+    gen_cfg_cpssm_no_geo.discrete_wiener_model_config = {1, 3, sampling_interval, [0, 0, sigma2_W_3_no_geo], 1}; % Update the Wiener state noise variance for the non-geometry-aided configuration
     gen_cfg_cpssm_no_geo.geometry_aided_measurement_config = struct('is_used', false);
 
     % No augmentation configuration (for training_scint_model = 'none')
@@ -299,11 +313,11 @@ function [rx_signal_model_inputs, gen_kf_cfg_geo, gen_kf_cfg_no_geo, init_estima
     is_enable_cmd_print = false;
 
     % Get the initial estimates for geometry-aided, non-geometry-aided, and no-augmentation (training_scint_model = 'none') configurations.
-    [gen_kf_cfg_geo, init_estimates_cpssm_geo] = get_kalman_pll_config(gen_cfg_cpssm_geo, cache_dir, is_enable_cmd_print);
     [gen_kf_cfg_no_geo, init_estimates_cpssm_no_geo] = get_kalman_pll_config(gen_cfg_cpssm_no_geo, cache_dir, is_enable_cmd_print);
+    [gen_kf_cfg_geo, init_estimates_cpssm_geo] = get_kalman_pll_config(gen_cfg_cpssm_geo, cache_dir, is_enable_cmd_print);
     [~, init_estimates_none] = get_kalman_pll_config(gen_cfg_none, cache_dir, is_enable_cmd_print);
 
-    ar_phase_idx = length(expected_doppler_profile) + 1;
+    ar_phase_idx = length(expected_doppler_profile) + 1; % The AR phase is the last state in the state vector, after the Doppler states.
 end
 
 function [kf_ar_cfg, akf_ar_cfg, ahl_kf_ar_cfg, kf_cfg, akf_cfg, online_mdl_learning_cfg] = get_adaptive_cfgs()
