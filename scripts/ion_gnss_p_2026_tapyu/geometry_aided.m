@@ -9,6 +9,8 @@
 % Author: Rubem Vasconcelos Pacelli
 % Email: rubem.engenharia@gmail.com
 
+%% Initialization
+
 clearvars; clc;
 
 addpath(genpath(fullfile(pwd, '..', '..', 'libs')));
@@ -28,29 +30,29 @@ severities = ["weak", "strong"];
 
 % General parameters
 % Correlation sampling interval
-sampling_interval = 1e-2;
+sampling_interval = 1e-2; % 100 ms
 settling_time = 50;
 simulation_time = 300;
-geometry_noise_variance = 1e-12;
+geometry_noise_variance = 1e-12; % HACK: 1e-14; for test.
 
 % Valid time vector (after the settling period)
 valid_samples_vector = ((settling_time/sampling_interval + 1) : simulation_time/sampling_interval).';
 
-results_matrix_template = zeros(length(sigma2_W_3_sweep),mc_runs);
-struct_states = struct('phi_T', results_matrix_template, 'phi_W', results_matrix_template, 'phi_AR', results_matrix_template);
-geometry_states = struct('phi_T', results_matrix_template);
-approaches_struct = struct('kf_ar', struct_states, ...
-                           'kf_ar_geo', geometry_states, ...
-                           'kf_ar_no_geo', geometry_states, ...
-                           'akf_ar', struct_states, ...
-                           'ahl_kf_ar', struct_states, ...
-                           'kf', struct('phi_T', results_matrix_template, 'phi_W', results_matrix_template), ...
-                           'akf', struct('phi_T',results_matrix_template, 'phi_W', results_matrix_template));
+% Pre-allocate the results structure
+results_matrix_template = zeros(length(sigma2_W_3_sweep),mc_runs); % [sigma2_W_3_idx, seed]
+struct_states = struct('phi_T', results_matrix_template, 'phi_W', results_matrix_template); % ???: understand why we have phi_T and phi_W. I got this from `single_freq_assessment.m`
+struct_aug_states = struct('phi_T', results_matrix_template, 'phi_W', results_matrix_template, 'phi_AR', results_matrix_template);
+approaches_struct = struct('kf_ar_geo', struct_aug_states, ...
+                           'kf_ar_no_geo', struct_aug_states, ...
+                           'kf', struct_states);
+                            % TODO: 'akf_ar', struct_aug_states, ...
+                            % TODO: 'ahl_kf_ar', struct_aug_states, ...
+                            % TODO: 'akf', struct('phi_T',results_matrix_template, 'phi_W', results_matrix_template))
 severities_struct = struct('weak', approaches_struct, 'strong',approaches_struct);
-results = struct('cpssm_wo_refr', severities_struct, ...
-    'cpssm_w_refr', severities_struct);
+results = struct('cpssm_wo_refr', severities_struct, 'cpssm_w_refr', severities_struct);
 
-%%% CPSSM loop (diffractive phase only)
+%% CPSSM loop (diffractive phase only)
+
 fprintf('\nStarting CPSSM (diffractive phase only, without refractive effect) simulations...\n');
 total_cppsm_wo_refr = numel(severities) * length(sigma2_W_3_sweep) * mc_runs;
 iter = 0;
@@ -58,7 +60,7 @@ start_time = tic;
 for severity = severities
     for sigma2_W_3_idx = 1:length(sigma2_W_3_sweep)
         for seed = 1:mc_runs
-            [rx_signal_model_inputs, gen_kf_cfg_geo, gen_kf_cfg_no_geo, init_estimates_csm, init_estimates_cpssm_geo, init_estimates_cpssm_no_geo, init_estimates_none, ar_phase_idx] =...
+            [rx_signal_model_inputs, gen_kf_cfg_geo, gen_kf_cfg_no_geo, init_estimates_cpssm_geo, init_estimates_cpssm_no_geo, init_estimates_none, ar_phase_idx] =...
                 get_overall_cfgs(cache_dir, 'cpssm', severity, true, sigma2_W_3_sweep(sigma2_W_3_idx), sampling_interval, settling_time, simulation_time, seed, geometry_noise_variance);
 
             [rx_sig_cpssm_wo_refr, true_los_phase, ~, diffractive_phase] = get_received_signal(rx_signal_model_inputs{:});
@@ -129,7 +131,8 @@ for severity = severities
     end
 end
 
-%%% CPSSM loop (diffractive + refractive phase)
+%% CPSSM loop (diffractive + refractive phase)
+
 fprintf('\nStarting CPSSM (wit refractive effect) simulations...\n');
 total_cppsm_w_refr = numel(severities) * length(sigma2_W_3_sweep) * mc_runs;
 iter = 0;
@@ -137,7 +140,7 @@ start_time = tic;
 for severity = severities
     for sigma2_W_3_idx = 1:length(sigma2_W_3_sweep)
         for seed = 1:mc_runs
-            [rx_signal_model_inputs, gen_kf_cfg_geo, gen_kf_cfg_no_geo, init_estimates_csm, init_estimates_cpssm_geo, init_estimates_cpssm_no_geo, init_estimates_none, ar_phase_idx] =...
+            [rx_signal_model_inputs, gen_kf_cfg_geo, gen_kf_cfg_no_geo, init_estimates_cpssm_geo, init_estimates_cpssm_no_geo, init_estimates_none, ar_phase_idx] =...
                 get_overall_cfgs(cache_dir, 'cpssm', severity, false, sigma2_W_3_sweep(sigma2_W_3_idx), sampling_interval, settling_time, simulation_time, seed, geometry_noise_variance);
 
             [rx_sig_cpssm_w_refr, true_los_phase, psi_settled, diffractive_phase] = get_received_signal(rx_signal_model_inputs{:});
@@ -209,23 +212,8 @@ end
 
 save(fullfile('results/geometry_aided.mat'), "results", "sigma2_W_3_sweep");
 
-figure('Color', 'w', 'Name', 'KF-AR geometry comparison');
-for severity_idx = 1:numel(severities)
-    severity = severities(severity_idx);
-    subplot(1, numel(severities), severity_idx);
-    mrmse_geo = mean(results.cpssm_w_refr.(severity).kf_ar_geo.phi_T, 2);
-    mrmse_no_geo = mean(results.cpssm_w_refr.(severity).kf_ar_no_geo.phi_T, 2);
-    semilogx(sigma2_W_3_sweep, mrmse_geo, '-o', 'LineWidth', 1.5); hold on;
-    semilogx(sigma2_W_3_sweep, mrmse_no_geo, '-s', 'LineWidth', 1.5);
-    grid on;
-    xlabel('\sigma^2_{W,3}');
-    ylabel('MRMSE (rad)');
-    title(sprintf('CPSSM %s', severity));
-    legend('KF-AR with geometry', 'KF-AR without geometry', 'Location', 'best');
-end
-
 %% Auxiliary functions
-function [rx_signal_model_inputs, gen_kf_cfg_geo, gen_kf_cfg_no_geo, init_estimates_csm, init_estimates_cpssm_geo, init_estimates_cpssm_no_geo, init_estimates_none, ar_phase_idx] = ...
+function [rx_signal_model_inputs, gen_kf_cfg_geo, gen_kf_cfg_no_geo, init_estimates_cpssm_geo, init_estimates_cpssm_no_geo, init_estimates_none, ar_phase_idx] = ...
     get_overall_cfgs(cache_dir, scint_model, severity, is_refractive_effects_removed_received_signal, sigma2_W_3, sampling_interval, settling_time, simulation_time, seed, geometry_noise_variance)
     % Define overall settings for the KF framework setup
 
@@ -239,24 +227,14 @@ function [rx_signal_model_inputs, gen_kf_cfg_geo, gen_kf_cfg_no_geo, init_estima
     is_unwrapping_used = false; % This flag forces to use the wrapped phase for training the AR model
 
     % Parts for building the received signal
-    csm_first_part = {L1_C_over_N0_dBHz, 'CSM', doppler_profile};
-    csm_second_part = {'simulation_time', simulation_time, 'settling_time', settling_time};
     cpssm_first_part = {L1_C_over_N0_dBHz, 'TPPSM', doppler_profile};
     cpssm_second_part = {'simulation_time', simulation_time, 'settling_time', settling_time, 'is_refractive_effects_removed', is_refractive_effects_removed_received_signal};
-
-    % CSM parameters for weak and strong scintillation
-    S4_preset = [0.2, 0.9];
-    tau0_preset = [1, 0.2];
 
     % CPSSM timing scaling parameters for weak and strong scintillation
     rhof_veff_ratio_preset = [1.5, 0.27]; % See right plot of Table 3.2 of my dissertation.
 
     switch severity
         case 'weak'
-            train_cfg_csm = struct('scintillation_model', 'CSM', 'S4', S4_preset(1), 'tau0', tau0_preset(1), ...
-                'simulation_time', training_simulation_time, ...
-                'sampling_interval', sampling_interval, ...
-                'is_unwrapping_used', is_unwrapping_used);
             train_cfg_cpssm  = struct('scintillation_model', 'TPPSM', 'scenario', severity, ...
                 'rhof_veff_ratio', rhof_veff_ratio_preset(1), ...
                 'simulation_time', training_simulation_time, ...
@@ -265,18 +243,13 @@ function [rx_signal_model_inputs, gen_kf_cfg_geo, gen_kf_cfg_no_geo, init_estima
                 'is_unwrapping_used', is_unwrapping_used, ...
                 'is_enable_cmd_print', false);
             switch scint_model
-                case 'csm'
-                    ar_model_order = 6; % See right plot of Figure 4.2 of my dissertation.
-                    rx_signal_model_inputs = [csm_first_part(:)',{seed},{'S4'},{S4_preset(1)},{'tau0'},{tau0_preset(1)},csm_second_part(:)'];
                 case 'cpssm'
                     ar_model_order = 14; % See right plot of Figure 4.7 of my dissertation.
                     rx_signal_model_inputs = [cpssm_first_part(:)',{seed},{'tppsm_scenario'}, {'weak'},cpssm_second_part(:)', 'rhof_veff_ratio', rhof_veff_ratio_preset(1)];
+                otherwise
+                    error('Unsupported scintillation model: %s', scint_model);
             end
         case 'strong'
-            train_cfg_csm = struct('scintillation_model', 'CSM', 'S4', S4_preset(2), 'tau0', tau0_preset(2), ...
-                'simulation_time', training_simulation_time, ...
-                'sampling_interval', sampling_interval, ...
-                'is_unwrapping_used', is_unwrapping_used);
             train_cfg_cpssm  = struct('scintillation_model', 'TPPSM', 'scenario', severity, ...
                 'rhof_veff_ratio', rhof_veff_ratio_preset(2), ...
                 'simulation_time', training_simulation_time, ...
@@ -285,12 +258,11 @@ function [rx_signal_model_inputs, gen_kf_cfg_geo, gen_kf_cfg_no_geo, init_estima
                 'is_unwrapping_used', is_unwrapping_used, ...
                 'is_enable_cmd_print', false);
             switch scint_model
-                case 'csm'
-                    rx_signal_model_inputs = [csm_first_part(:)',{seed},{'S4'},{S4_preset(2)},{'tau0'},{tau0_preset(2)},csm_second_part(:)'];
-                    ar_model_order = 5; % See right plot of Figure 4.2 of my dissertation.
                 case 'cpssm' 
                     ar_model_order = 1; % See right plot of Figure 4.7 of my dissertation.
                     rx_signal_model_inputs = [cpssm_first_part(:)',{seed},{'tppsm_scenario'},{'strong'},cpssm_second_part(:)', 'rhof_veff_ratio', rhof_veff_ratio_preset(2)];
+                otherwise
+                    error('Unsupported scintillation model: %s', scint_model);
             end
     end
 
@@ -298,10 +270,11 @@ function [rx_signal_model_inputs, gen_kf_cfg_geo, gen_kf_cfg_no_geo, init_estima
 
     expected_doppler_profile = [0,1000,0.94];
 
-    gen_cfg_csm = struct( ...
+    % Geometry-aided configuration
+    gen_cfg_cpssm_geo = struct( ...
       'kf_type', 'standard', ...
       'discrete_wiener_model_config', { {1, 3, sampling_interval, [0, 0, sigma2_W_3], 1} }, ...
-      'scintillation_training_data_config', train_cfg_csm, ...
+      'scintillation_training_data_config', train_cfg_cpssm, ...
       'C_over_N0_array_dBHz', L1_C_over_N0_dBHz, ...
       'initial_states_distributions_boundaries', { {[-pi, pi], [-25, 25], [-1, 1]} }, ...
       'expected_doppler_profile', expected_doppler_profile, ...
@@ -310,21 +283,22 @@ function [rx_signal_model_inputs, gen_kf_cfg_geo, gen_kf_cfg_no_geo, init_estima
       'is_generate_random_initial_estimates', true, ...
       'is_enable_cmd_print', false ...
     );
-
-    gen_cfg_cpssm_geo = gen_cfg_csm;
     gen_cfg_cpssm_geo.scintillation_training_data_config = train_cfg_cpssm;
     gen_cfg_cpssm_geo.geometry_aided_measurement_config = struct('is_used', true, 'noise_variance', geometry_noise_variance);
 
-    gen_cfg_cpssm_no_geo = gen_cfg_csm;
+    % Non-geometry-aided configuration
+    gen_cfg_cpssm_no_geo = gen_cfg_cpssm_geo;
     gen_cfg_cpssm_no_geo.scintillation_training_data_config = train_cfg_cpssm;
-    
-    gen_cfg_none = gen_cfg_csm;
+    gen_cfg_cpssm_no_geo.geometry_aided_measurement_config = struct('is_used', false);
+
+    % No augmentation configuration (for training_scint_model = 'none')
+    gen_cfg_none = gen_cfg_cpssm_geo;
     gen_cfg_none.scintillation_training_data_config = train_cfg_none;
     gen_cfg_none.augmentation_model_initializer.id = 'none';
     gen_cfg_none.augmentation_model_initializer.model_params = struct();
     is_enable_cmd_print = false;
 
-    [~, init_estimates_csm] = get_kalman_pll_config(gen_cfg_csm, cache_dir, is_enable_cmd_print);
+    % Get the initial estimates for geometry-aided, non-geometry-aided, and no-augmentation (training_scint_model = 'none') configurations.
     [gen_kf_cfg_geo, init_estimates_cpssm_geo] = get_kalman_pll_config(gen_cfg_cpssm_geo, cache_dir, is_enable_cmd_print);
     [gen_kf_cfg_no_geo, init_estimates_cpssm_no_geo] = get_kalman_pll_config(gen_cfg_cpssm_no_geo, cache_dir, is_enable_cmd_print);
     [~, init_estimates_none] = get_kalman_pll_config(gen_cfg_none, cache_dir, is_enable_cmd_print);
