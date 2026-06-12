@@ -2,11 +2,13 @@
 %
 % Overlay phase error time series for five PLL approaches:
 % KF-AR, AKF-AR, AHL-KF-AR, KF, AKF
-% Replicates exactly the layout and styling of error_series_plots_vs_sigma2_W,
-% but with a fixed sigma2_W_3=1e-6 and overlay of all approaches.
-% Now includes diffractive phase on last row (".-" style) and refractive in last fig legend.
+% This code was originially written by Rodrigo de Lima Florindo,
+% and I used the same code to introduce the phase tracking problem
+% for single frequency. I maintained the same parameter names and
+% overwrite the auxiliary functions to keep the same settings provided by
+% Rodrigo. sigma2_W_3 is set to 1e-6
 %
-% Author: Rodrigo de Lima Florindo
+% Author: Rodrigo de Lima Florindo and Rubem Vasconcelos Pacelli
 % ORCID: https://orcid.org/0000-0003-0412-5583
 % Email: rdlfresearch@gmail.com
 
@@ -128,6 +130,7 @@ save(fullfile(results_dir,'errors_comparison_all_prev_approaches.mat'),'data');
 
 
 %% Auxiliary functions
+% CAVEAT: these functions are overwriting the ones for geometry comparison. Keep then to maintain the same settings provided by Rodrigo
 function [rx_signal_model_inputs, gen_kf_cfg, init_estimates_cpssm, init_estimates_none, ar_phase_idx] = ...
     get_overall_cfgs(results_dir, severity, is_refractive_effects_removed_received_signal, sigma2_W_3, sampling_interval, settling_time, simulation_time, seed)
     % Define overall settings for the KF framework setup
