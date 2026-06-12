@@ -40,7 +40,7 @@ geometry_noise_variance = 1e-12; % FIXME: you should adjust this value according
 valid_samples_vector = ((settling_time/sampling_interval + 1) : simulation_time/sampling_interval).';
 
 % Pre-allocate the results structure
-results_matrix_template = zeros(length(sigma2_W_3_sweep_no_geo),mc_runs); % [sigma2_W_3_idx, seed]
+results_matrix_template = zeros(sigma2_W_3_sweep_amount,mc_runs); % [sigma2_W_3_idx, seed]
 struct_states = struct('phi_T', results_matrix_template, 'phi_W', results_matrix_template);
 struct_aug_states = struct('phi_T', results_matrix_template, 'phi_W', results_matrix_template, 'phi_AR', results_matrix_template);
 approaches_struct = struct('kf_ar_geo', struct_aug_states, ...
@@ -55,11 +55,11 @@ results = struct('cpssm_wo_refr', severities_struct, 'cpssm_w_refr', severities_
 %% CPSSM loop (diffractive phase only)
 
 fprintf('\nStarting CPSSM (diffractive phase only, without refractive effect) simulations...\n');
-total_cppsm_wo_refr = numel(severities) * length(sigma2_W_3_sweep_no_geo) * mc_runs;
+total_cppsm_wo_refr = numel(severities) * sigma2_W_3_sweep_amount * mc_runs;
 iter = 0;
 start_time = tic;
 for severity = severities
-    for sigma2_W_3_idx = 1:length(sigma2_W_3_sweep_no_geo)
+    for sigma2_W_3_idx = 1:sigma2_W_3_sweep_amount
         for seed = 1:mc_runs
             [rx_signal_model_inputs, gen_kf_cfg_geo, gen_kf_cfg_no_geo, init_estimates_cpssm_geo, init_estimates_cpssm_no_geo, init_estimates_none, ar_phase_idx] =...
                 get_overall_cfgs(cache_dir, 'cpssm', severity, true, sigma2_W_3_sweep_no_geo(sigma2_W_3_idx), sigma2_W_3_sweep_geo(sigma2_W_3_idx), sampling_interval, settling_time, simulation_time, seed, geometry_noise_variance);
@@ -112,8 +112,8 @@ for severity = severities
             results.cpssm_wo_refr.(severity).kf_ar_no_geo.phi_AR(sigma2_W_3_idx, seed) = rms(wrapToPi(kf_ar_no_geo_valid_hat_phi_AR - valid_cpssm_phase));
             % KF-AR geometry-aided
             results.cpssm_wo_refr.(severity).kf_ar_geo.phi_T(sigma2_W_3_idx, seed) = rms(wrapToPi(kf_ar_geo_valid_hat_phi_T - valid_total_phase));
-            results.cpssm_wo_refr.(severity).kf_ar_geo.phi_W(sigma2_W_3_idx, seed) = rms(wrapToPi(kf_ar_no_geo_valid_hat_phi_W - valid_los_phase));
-            results.cpssm_wo_refr.(severity).kf_ar_geo.phi_AR(sigma2_W_3_idx, seed) = rms(wrapToPi(kf_ar_no_geo_valid_hat_phi_AR - valid_cpssm_phase));
+            results.cpssm_wo_refr.(severity).kf_ar_geo.phi_W(sigma2_W_3_idx, seed) = rms(wrapToPi(kf_ar_geo_valid_hat_phi_W - valid_los_phase));
+            results.cpssm_wo_refr.(severity).kf_ar_geo.phi_AR(sigma2_W_3_idx, seed) = rms(wrapToPi(kf_ar_geo_valid_hat_phi_AR - valid_cpssm_phase));
             % % AKF-AR
             % results.cpssm_wo_refr.(severity).akf_ar.phi_W(sigma2_W_3_idx, seed) = rms(wrapToPi(akf_ar_valid_hat_phi_W - valid_los_phase));
             % results.cpssm_wo_refr.(severity).akf_ar.phi_AR(sigma2_W_3_idx, seed) = rms(wrapToPi(akf_ar_valid_hat_phi_AR - valid_cpssm_phase));
@@ -134,7 +134,7 @@ for severity = severities
             elapsed = toc(start_time);
             remain  = elapsed * (total_cppsm_wo_refr/iter - 1);
             fprintf('CPSSM (w/o refractive effect) [%d/%d] severity=%s, sigma2_W_3_idx=%d/%d, seed=%d/%d, elapsed=%.1fs, remaining~%.1fs\n', ...
-                    iter, total_cppsm_wo_refr, severity, sigma2_W_3_idx, length(sigma2_W_3_sweep_no_geo), seed, mc_runs, elapsed, remain);
+                    iter, total_cppsm_wo_refr, severity, sigma2_W_3_idx, sigma2_W_3_sweep_amount, seed, mc_runs, elapsed, remain);
         end
     end
 end
@@ -142,11 +142,11 @@ end
 %% CPSSM loop (diffractive + refractive phase)
 
 fprintf('\nStarting CPSSM (wit refractive effect) simulations...\n');
-total_cppsm_w_refr = numel(severities) * length(sigma2_W_3_sweep_no_geo) * mc_runs;
+total_cppsm_w_refr = numel(severities) * sigma2_W_3_sweep_amount * mc_runs;
 iter = 0;
 start_time = tic;
 for severity = severities
-    for sigma2_W_3_idx = 1:length(sigma2_W_3_sweep_no_geo)
+    for sigma2_W_3_idx = 1:sigma2_W_3_sweep_amount
         for seed = 1:mc_runs
             [rx_signal_model_inputs, gen_kf_cfg_geo, gen_kf_cfg_no_geo, init_estimates_cpssm_geo, init_estimates_cpssm_no_geo, init_estimates_none, ar_phase_idx] =...
                 get_overall_cfgs(cache_dir, 'cpssm', severity, false, sigma2_W_3_sweep_no_geo(sigma2_W_3_idx), sigma2_W_3_sweep_geo(sigma2_W_3_idx), sampling_interval, settling_time, simulation_time, seed, geometry_noise_variance);
@@ -219,7 +219,7 @@ for severity = severities
             elapsed = toc(start_time);
             remain  = elapsed * (total_cppsm_w_refr/iter - 1);
             fprintf('CPSSM (w/ refractive effect) [%d/%d] severity=%s, sigma2_W_3_idx=%d/%d, seed=%d/%d, elapsed=%.1fs, remaining~%.1fs\n', ...
-                    iter, total_cppsm_w_refr, severity, sigma2_W_3_idx, length(sigma2_W_3_sweep_no_geo), seed, mc_runs, elapsed, remain);
+                    iter, total_cppsm_w_refr, severity, sigma2_W_3_idx, sigma2_W_3_sweep_amount, seed, mc_runs, elapsed, remain);
         end
     end
 end
