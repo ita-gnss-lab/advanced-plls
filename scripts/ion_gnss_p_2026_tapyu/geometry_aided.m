@@ -1,12 +1,9 @@
 % Description:
 %   Script for running Monte Carlo runs for performance assessement
-%   of the KF and KF-AR approaches for the CPSSM, with and without refractive effects
-%   and with different values of the Wiener state noise variance (\sigma^2_{W,3}).
-%   It is also plotted the performence of the geometry-aided KF-AR for
-%   a fixed value of \sigma^2_{W,3}=1e-14. For the seed defined in `seed_to_save_time_series`
-%   the time series of the estimates are saved for later plotting. For the non-geometry-aided
-%   approach, the time series of the estimates are saved for all the values of \sigma^2_{W,3}.
-%   For the geometry, aided approach, only one time series for \sigma^2_{W,3}=1e-14 is saved.
+%   of the KF and KF-AR approaches for the CPSSM, with and withoud geometry aiding,
+%   with and without refractive effects, and with different values of the AR noise variance
+%   (\sigma^2_{W,3}). For the seed is defined by `seed_to_save_time_series` to save
+%   the all time series of the estimates are saved for later plotting.
 %
 % Author: Rubem Vasconcelos Pacelli
 % Email: rubem.engenharia@gmail.com
@@ -25,7 +22,7 @@ geometry_noise_variance = 1e-12; % FIXME: you should adjust this value according
 
 %%% Ionospheric scintillation parameters
 sigma2_W_3_sweep_amount = 10; % Wiener state noise variance (\sigma^2_{W,3})
-sigma2_W_3_sweep = logspace(-18,2,sigma2_W_3_sweep_amount);
+sigma2_W_3_sweep = logspace(-18,9,sigma2_W_3_sweep_amount);
 severities = ["weak", "strong"]; % Ionospheric Scintillation Severities
 
 %%% Output data structure
@@ -42,22 +39,26 @@ approaches_struct = struct('kf_ar_geo', struct_states, ...
 
 severities_struct = struct('weak', approaches_struct, 'strong', approaches_struct);
 
-data = struct('cpssm_wo_refr', severities_struct, 'cpssm_w_refr', severities_struct);
+data = struct('cpssm_wo_refr', severities_struct, 'cpssm_w_refr', severities_struct, 'temporal_support', []);
 
-%% Main processing
+%%% Timing parameters
+sampling_interval             = 1e-2; % 100 ms
+settling_time                 = 50; % start of the scintillation effects
+simulation_time               = 300; % how long the simulation runs
+zoom_end                      = 150; % seconds, the end of the zoom window, to make the plots more not too wide
+valid_samples_idxs            = round(settling_time/sampling_interval) : round(zoom_end/sampling_interval); % valid sample indices to the zoom window, which starts right after the settling period, i.e., when the scintillation begins
+data.temporal_support         = settling_time : sampling_interval : zoom_end; % temporal support for the zoom window
 
 %%% Simulation parameters
-sampling_interval = 1e-2; % 100 ms
-settling_time = 50; % start of the scintillation effects
-simulation_time = 300; % how long the simulation runs
-mc_runs = 10; % Monte Carlo runs
+mc_seeds                 = 10; % Monte Carlo runs
 seed_to_save_time_series = 1; % save the time series of the estimates for this seed
-valid_samples_idxs = ((settling_time/sampling_interval + 1) : simulation_time/sampling_interval).'; % valid sample indices (after the settling period)
-total_runs = numel(fieldnames(data)) * numel(severities) * sigma2_W_3_sweep_amount * mc_runs;
+total_runs = numel(fieldnames(data)) * numel(severities) * sigma2_W_3_sweep_amount * mc_seeds;
 iter = 0;
 
+%% Main loop
+
 fprintf('\nStarting CPSSM with and without refractive effects for KF-AR with and without geometry-aiding...\n');
-for is_remove_refractive_effects = [true, false]
+for is_remove_refractive_effects = [false, true]
     if is_remove_refractive_effects
         refractivity = 'cpssm_wo_refr';
     else
@@ -65,7 +66,7 @@ for is_remove_refractive_effects = [true, false]
     end
     
     for severity = severities
-        for seed = 1:mc_runs
+        for seed = 1:mc_seeds
             for sigma2_W_3_idx = 1:sigma2_W_3_sweep_amount
                 [rx_signal_model_inputs, gen_kf_cfg_geo, gen_kf_cfg_no_geo, init_estimates_cpssm_geo, init_estimates_cpssm_no_geo, init_estimates_none, ar_phase_idx] =...
                     get_overall_cfgs(cache_dir, 'cpssm', severity, is_remove_refractive_effects, sigma2_W_3_sweep(sigma2_W_3_idx), sigma2_W_3_sweep(sigma2_W_3_idx), sampling_interval, settling_time, simulation_time, seed, geometry_noise_variance);
@@ -135,8 +136,8 @@ for is_remove_refractive_effects = [true, false]
 
                 %%% Progress print
                 iter = iter + 1;
-                fprintf('CPSSM (w/o refractive effect), for non-geometry aided [%d/%d] severity=%s, seed=%d/%d, sigma2_W_3_idx=%d/%d\n', ...
-                        iter, total_runs, severity, seed, mc_runs, sigma2_W_3_idx, sigma2_W_3_sweep_amount);
+                fprintf('CPSSM, is refractive: %d, for non-geometry aided [%d/%d] severity=%s, seed=%d/%d, sigma2_W_3_idx=%d/%d\n', ...
+                        is_remove_refractive_effects, iter, total_runs, severity, seed, mc_seeds, sigma2_W_3_idx, sigma2_W_3_sweep_amount);
             end
         end
     end
