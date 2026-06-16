@@ -1,5 +1,5 @@
 function [rx_signal_model_inputs, gen_kf_cfg_geo, gen_kf_cfg_no_geo, init_estimates_cpssm_geo, init_estimates_cpssm_no_geo, init_estimates_none, ar_phase_idx] = ...
-    get_overall_cfgs(cache_dir, scint_model, severity, is_refractive_effects_removed_received_signal, sigma2_W_3_no_geo, sigma2_W_3_geo, sampling_interval, settling_time, simulation_time, seed, geometry_noise_variance)
+    get_overall_cfgs(cache_dir, scint_model, severity, is_refractive_effects_removed_received_signal, sigma2_W_3_no_geo, sigma2_W_3_geo, sampling_interval, settling_time, simulation_time, seed, phi_LOS_noise_variance)
     % Define overall settings for the KF framework setup
 
     % General parameters
@@ -29,7 +29,7 @@ function [rx_signal_model_inputs, gen_kf_cfg_geo, gen_kf_cfg_no_geo, init_estima
                 'is_enable_cmd_print', false);
             switch scint_model
                 case 'cpssm'
-                    ar_model_order = 14; % See right plot of Figure 4.7 of my dissertation.
+                    ar_model_order = 1; % SEE: My article ION GNSS+2026
                     rx_signal_model_inputs = [cpssm_first_part(:)',{seed},{'tppsm_scenario'}, {'weak'},cpssm_second_part(:)', 'rhof_veff_ratio', rhof_veff_ratio_preset(1)];
                 otherwise
                     error('Unsupported scintillation model: %s', scint_model);
@@ -44,7 +44,7 @@ function [rx_signal_model_inputs, gen_kf_cfg_geo, gen_kf_cfg_no_geo, init_estima
                 'is_enable_cmd_print', false);
             switch scint_model
                 case 'cpssm' 
-                    ar_model_order = 1; % See right plot of Figure 4.7 of my dissertation.
+                    ar_model_order = 1; % SEE: My article ION GNSS+2026
                     rx_signal_model_inputs = [cpssm_first_part(:)',{seed},{'tppsm_scenario'},{'strong'},cpssm_second_part(:)', 'rhof_veff_ratio', rhof_veff_ratio_preset(2)];
                 otherwise
                     error('Unsupported scintillation model: %s', scint_model);
@@ -67,7 +67,7 @@ function [rx_signal_model_inputs, gen_kf_cfg_geo, gen_kf_cfg_no_geo, init_estima
       'is_use_cached_settings', false, ...
       'is_generate_random_initial_estimates', true, ...
       'is_enable_cmd_print', false, ...
-      'geometry_aided_measurement_config', struct('is_used', true, 'noise_variance', geometry_noise_variance) ...
+      'geometry_aided_measurement_config', struct('is_used', true, 'noise_variance', phi_LOS_noise_variance) ...
     );
 
     % Non-geometry-aided configuration (peform some updates to the geometry-aided configuration)

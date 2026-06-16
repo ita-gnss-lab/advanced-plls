@@ -16,9 +16,20 @@ addpath(genpath(fullfile(pwd, '..', '..', 'libs')));
 cache_dir = fullfile(fileparts(mfilename('fullpath')), 'cache');
 outfile = fullfile(fileparts(mfilename('fullpath')), 'results', 'results_L1_assessment.mat');
 
+%%% Constantes
+L1_frequency = 1575.42e6; % L1 frequency in Hz
+c0 = 299792458; % Speed of light in m/s
+
+%%% Geometric error statistics
+p = 0.95; % confidence level for the geometry-aiding noise variance, i.e., the geometric error should be [-1, 1] [m] with 95% confidences
+alpha = 1 - p; % significance level
+geometry_noise_std = 1 / qfuncinv(alpha/2); % [m] standard deviation of the geometric error, which is obtained from the confidence level using the inverse of the Q-function
+geometry_noise_variance = geometry_noise_std^2; % [m^2] variance of
+phi_LOS_noise_variance = (2 * pi * L1_frequency / c0)^2 * geometry_noise_variance; % [rad^2]
+
+
 %%% Get KF parameters
 [kf_ar_cfg, ~, ~, ~, ~, online_mdl_learning_cfg] = get_adaptive_cfgs();
-geometry_noise_variance = 1e-12; % FIXME: you should adjust this value according to the expected accuracy of the satellite ephemerides
 
 %%% Ionospheric scintillation parameters
 sigma2_W_3_sweep_amount = 10; % Wiener state noise variance (\sigma^2_{W,3})
@@ -42,7 +53,7 @@ severities_struct = struct('weak', approaches_struct, 'strong', approaches_struc
 data = struct('cpssm_wo_refr', severities_struct, 'cpssm_w_refr', severities_struct, 'temporal_support', []);
 
 %%% Timing parameters
-sampling_interval             = 1e-2; % 100 ms
+sampling_interval             = 10e-3; % 10 ms
 settling_time                 = 50; % start of the scintillation effects
 simulation_time               = 300; % how long the simulation runs
 zoom_end                      = 150; % seconds, the end of the zoom window, to make the plots more not too wide
@@ -69,11 +80,11 @@ for is_remove_refractive_effects = [false, true]
         for seed = 1:mc_seeds
             for sigma2_W_3_idx = 1:sigma2_W_3_sweep_amount
                 [rx_signal_model_inputs, gen_kf_cfg_geo, gen_kf_cfg_no_geo, init_estimates_cpssm_geo, init_estimates_cpssm_no_geo, init_estimates_none, ar_phase_idx] =...
-                    get_overall_cfgs(cache_dir, 'cpssm', severity, is_remove_refractive_effects, sigma2_W_3_sweep(sigma2_W_3_idx), sigma2_W_3_sweep(sigma2_W_3_idx), sampling_interval, settling_time, simulation_time, seed, geometry_noise_variance);
+                    get_overall_cfgs(cache_dir, 'cpssm', severity, is_remove_refractive_effects, sigma2_W_3_sweep(sigma2_W_3_idx), sigma2_W_3_sweep(sigma2_W_3_idx), sampling_interval, settling_time, simulation_time, seed, phi_LOS_noise_variance);
 
                 %%% Get received signal
                 [rx_sig, true_los_phase, psi_settled, diffractive_phase] = get_received_signal(rx_signal_model_inputs{:}); % NOTE: `diffractive_phase` is wrapped
-                geometry_los_phase = get_noisy_geometry_phase(true_los_phase, sigma2_W_3_sweep(sigma2_W_3_idx));
+                geometry_los_phase = get_noisy_geometry_phase(true_los_phase, phi_LOS_noise_variance);
                 
                 %%% Get Kalman estimates
                 % non-geometry-aided KF-AR
