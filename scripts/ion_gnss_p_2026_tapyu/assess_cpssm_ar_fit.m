@@ -5,6 +5,7 @@ addpath(genpath(fullfile(pwd, "..", "..", "..")));
 sim_time = 150;
 t_samp = 0.01;
 fs = 1/t_samp;
+is_refractive_effects_removed = false; % CAVEAT: don't change it. In my article, I've opted to not remove refractive effects. You shoul toggle it only if you want to assess the AR fit for only the diffractive phase, as it was done in Rodrigo's article in ION GNSS+2026.
 
 seed = 8;
 rng(seed);
@@ -18,13 +19,30 @@ cpssm_params = struct( ...
 [psi_weak_ts, phi_R_weak_ts] = get_tppsm_multifreq_data(cpssm_params.Weak, 'seed', seed);
 [psi_strong_ts, phi_R_strong_ts] = get_tppsm_multifreq_data(cpssm_params.Strong, 'seed', seed);
 
-wrapped_phi_I_weak_ts = angle(psi_weak_ts(:,1));
-wrapped_phi_I_strong_ts = angle(psi_strong_ts(:,1));
+if is_refractive_effects_removed
+    % get unwrapped phase from a complex field using FFT-based interpolation.
+    phi_I_weak_ts = get_corrected_phase(psi_weak_ts(:,1)); % NOTE: ignore the warning
+    phi_I_strong_ts = get_corrected_phase(psi_strong_ts(:,1));
 
-phases_ts = [wrapped_phi_I_weak_ts, wrapped_phi_I_strong_ts];
+    % get the diffractive phase (unwrapped)
+    phi_D_weak_ts = phi_I_weak_ts - phi_R_weak_ts(:,1);
+    phi_D_strong_ts = phi_I_strong_ts - phi_R_strong_ts(:,1);
+
+    % get the diffractive phase (wrapped)
+    wrapped_phi_D_weak_ts = wrapToPi(phi_D_weak_ts);
+    wrapped_phi_D_strong_ts = wrapToPi(phi_D_strong_ts);
+
+    phases_ts = [wrapped_phi_D_weak_ts, wrapped_phi_D_strong_ts];
+else
+    wrapped_phi_I_weak_ts = angle(psi_weak_ts(:,1));
+    wrapped_phi_I_strong_ts = angle(psi_strong_ts(:,1));
+
+    phases_ts = [wrapped_phi_I_weak_ts, wrapped_phi_I_strong_ts];
+end
 
 ar_orders_amount = 20;
 bic_array = zeros(ar_orders_amount,2);
+var_array = zeros(size(bic_array));
 % Estimate `n_orders` AR models for assessing the optimum model order
 % First for loop -> Weak and Strong 
 for severity = 1:2
@@ -34,6 +52,7 @@ for severity = 1:2
         ar_model = estimate(ar_model, phases_ts(:, severity));
         results = summarize(ar_model);
         bic_array(ar_order,severity) = results.BIC;
+        var_array(ar_order,severity) = ar_model.Variance;
     end
 end
 
@@ -71,9 +90,13 @@ data.pxx_strong = pxx_strong;
 data.S_AR_weak = S_weak;
 data.S_AR_strong = S_strong;
 data.bic_array_weak = bic_array(:,1);
+data.var_array_weak = var_array(:,1);
 data.bic_array_strong = bic_array(:,2);
+data.var_array_strong = var_array(:,2);
 data.opt_ar_order_weak = min_idxs(1);
 data.opt_ar_order_strong = min_idxs(2);
+data.acf_weak = acf_weak;
+data.acf_strong = acf_strong;
 
 save('results/cpssm_ar_fit.mat', 'data');
 

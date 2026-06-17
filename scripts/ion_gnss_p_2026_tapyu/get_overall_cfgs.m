@@ -8,7 +8,7 @@ function [rx_signal_model_inputs, gen_kf_cfg_geo, gen_kf_cfg_no_geo, init_estima
 
     % Parameters for training the AR models for scintillation phase
     training_simulation_time = 300;
-    is_refractive_effects_removed_training_data = false; % Exclude the refractive effects % NOTE: Rodrigo was using obtaining the AR coefficients only with the diffractive component of the scintillation to analyze the impact of the unmodeled refractive effects on the performance of the KF-AR. Here, we are using the total scintillation phase (i.e., including the refractive effects) for training the AR model.
+    is_refractive_effects_removed_training_data = false; % whether to exclude the refractive effects % NOTE: Rodrigo was using obtaining the AR coefficients only with the diffractive component of the scintillation to analyze the impact of the unmodeled refractive effects on the performance of the KF-AR. Here, we are using the total scintillation phase (i.e., including the refractive effects) for training the AR model.
     is_unwrapping_used = false; % This flag forces to use the wrapped phase for training the AR model
 
     % Parts for building the received signal
