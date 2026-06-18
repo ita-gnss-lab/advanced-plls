@@ -3,7 +3,8 @@ function [rx_signal_model_inputs, gen_kf_cfg_geo, gen_kf_cfg_no_geo, init_estima
     % Define overall settings for the KF framework setup
 
     % General parameters
-    doppler_profile = [0, 1000, 0.94];
+    doppler_profile = [0, 2e3, 0.94]; % [rad, Hz, Hz/s] % SEE: My article ION GNSS+2026, Figure 3
+    expected_doppler_profile = [0,2e3,0.94];
     L1_C_over_N0_dBHz = 42;
 
     % Parameters for training the AR models for scintillation phase
@@ -53,7 +54,6 @@ function [rx_signal_model_inputs, gen_kf_cfg_geo, gen_kf_cfg_no_geo, init_estima
 
     train_cfg_none  = struct('scintillation_model', 'none', 'sampling_interval', sampling_interval);
 
-    expected_doppler_profile = [0,1000,0.94];
 
     % Geometry-aided configuration
     gen_cfg_cpssm_geo = struct( ...
